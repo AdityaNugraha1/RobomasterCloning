@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ESP32 WebSerial Gateway</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      background: linear-gradient(to bottom, #e0e7ff, #f3f4f6);
+      margin: 0;
+      padding: 20px;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      min-height: 100vh;
+    }
+    .container {
+      width: 100%;
+      max-width: 600px;
+      background: #fff;
+      border-radius: 10px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+      padding: 20px;
+    }
+    h1 {
+      font-size: 1.5rem;
+      color: #1f2937;
+      margin-bottom: 1rem;
+      text-align: center;
+    }
+    .status {
+      font-weight: bold;
+      margin-bottom: 1rem;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .connected { color: #16a34a; }
+    .disconnected { color: #dc2626; }
+    #messages {
+      height: 300px;
+      overflow-y: auto;
+      background: #f9fafb;
+      border: 1px solid #e5e7eb;
+      border-radius: 8px;
+      padding: 10px;
+      margin-bottom: 1rem;
+      scroll-behavior: smooth;
+    }
+    .message {
+      margin-bottom: 0.5rem;
+      padding: 8px;
+      border-radius: 5px;
+      animation: fadeIn 0.3s ease-in;
+    }
+    .serial { background: #ecfdf5; color: #16a34a; }
+    .user { background: #eff6ff; color: #2563eb; }
+    .system { color: #6b7280; }
+    .input-group {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+    #input {
+      flex: 1;
+      padding: 10px;
+      border: 1px solid #d1d5db;
+      border-radius: 5px;
+      font-size: 1rem;
+      outline: none;
+    }
+    #input:focus {
+      border-color: #2563eb;
+      box-shadow: 0 0 0 2px rgba(37,99,235,0.2);
+    }
+    button {
+      padding: 10px 20px;
+      border: none;
+      border-radius: 5px;
+      font-size: 1rem;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+    .send-btn { background: #2563eb; color: #fff; }
+    .send-btn:hover { background: #1d4ed8; }
+    .clear-btn { background: #dc2626; color: #fff; }
+    .clear-btn:hover { background: #b91c1c; }
+    .reconnect-btn { background: #2563eb; color: #fff; display: none; }
+    .reconnect-btn:hover { background: #1d4ed8; }
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(10px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    @media (max-width: 600px) {
+      .container { padding: 15px; }
+      h1 { font-size: 1.25rem; }
+      #input, button { font-size: 0.9rem; }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>ESP32 WebSerial Gateway</h1>
+    <div class="status">
+      Status: <span id="status" class="disconnected">Disconnected</span>
+      <button id="reconnectBtn" class="reconnect-btn" onclick="reconnect()">Reconnect</button>
+    </div>
+    <div id="messages"></div>
+    <div class="input-group">
+      <input id="input" type="text" placeholder="Type message...">
+      <button class="send-btn" onclick="sendMessage()">Send</button>
+      <button class="clear-btn" onclick="clearMessages()">Clear</button>
+    </div>
+  </div>
+
+  <script>
+    let socket = new WebSocket('ws://192.168.4.1:81/');
+    const statusEl = document.getElementById('status');
+    const messagesEl = document.getElementById('messages');
+    const inputEl = document.getElementById('input');
+    const reconnectBtn = document.getElementById('reconnectBtn');
+
+    socket.onopen = () => {
+      statusEl.textContent = 'Connected';
+      statusEl.className = 'connected';
+      reconnectBtn.style.display = 'none';
+      addMessage('[System] WebSocket connected', 'system');
+    };
+    
+    socket.onmessage = (e) => {
+      if(e.data.startsWith('[Serial]')) {
+        addMessage(e.data, 'serial');
+      }
+    };
+    
+    socket.onclose = () => {
+      statusEl.textContent = 'Disconnected';
+      statusEl.className = 'disconnected';
+      reconnectBtn.style.display = 'inline-block';
+      addMessage('[System] Connection lost. Use Reconnect button to try again.', 'system');
+    };
+    
+    socket.onerror = (e) => {
+      addMessage('[System] Error: WebSocket connection failed.', 'system');
+    };
+    
+    function sendMessage() {
+      const msg = inputEl.value.trim();
+      if(msg && socket.readyState === WebSocket.OPEN) {
+        socket.send(msg);
+        addMessage('[You] ' + msg, 'user');
+        inputEl.value = '';
+      }
+    }
+    
+    function clearMessages() {
+      messagesEl.innerHTML = '';
+    }
+    
+    function reconnect() {
+      if(socket) {
+        socket.close();
+      }
+      socket = new WebSocket('ws://192.168.4.1:81/');
+      socket.onopen = () => {
+        statusEl.textContent = 'Connected';
+        statusEl.className = 'connected';
+        reconnectBtn.style.display = 'none';
+        addMessage('[System] WebSocket connected', 'system');
+      };
+      socket.onmessage = (e) => {
+        if(e.data.startsWith('[Serial]')) {
+          addMessage(e.data, 'serial');
+        }
+      };
+      socket.onclose = () => {
+        statusEl.textContent = 'Disconnected';
+        statusEl.className = 'disconnected';
+        reconnectBtn.style.display = 'inline-block';
+        addMessage('[System] Connection lost. Use Reconnect button to try again.', 'system');
+      };
+      socket.onerror = (e) => {
+        addMessage('[System] Error: WebSocket connection failed.', 'system');
+      };
+      addMessage('[System] Attempting to reconnect...', 'system');
+    }
+    
+    function addMessage(msg, type) {
+      const div = document.createElement('div');
+      div.className = `message ${type}`;
+      div.textContent = msg;
+      messagesEl.appendChild(div);
+      messagesEl.scrollTo({ top: messagesEl.scrollHeight, behavior: 'smooth' });
+    }
+    
+    inputEl.addEventListener('keypress', (e) => {
+      if(e.key === 'Enter') sendMessage();
+    });
+  </script>
+</body>
+</html>
