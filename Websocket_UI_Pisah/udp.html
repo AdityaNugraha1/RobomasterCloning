@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ESP32 Joystick Motor Control</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/nipplejs/0.10.0/nipplejs.min.js"></script>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      background: linear-gradient(to bottom, #e0e7ff, #f3f4f6);
+      margin: 0;
+      padding: 20px;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      min-height: 100vh;
+    }
+    .container {
+      width: 100%;
+      max-width: 400px;
+      background: #fff;
+      border-radius: 10px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+      padding: 20px;
+      text-align: center;
+    }
+    h1 {
+      font-size: 1.5rem;
+      color: #1f2937;
+      margin-bottom: 1rem;
+    }
+    .status {
+      font-weight: bold;
+      margin-bottom: 1rem;
+      text-align: center;
+    }
+    .connected { color: #16a34a; }
+    .disconnected { color: #dc2626; }
+    #joystick {
+      width: 200px;
+      height: 200px;
+      margin: 0 auto;
+      background: #f3f4f6;
+      border-radius: 50%;
+      position: relative;
+      border: 2px solid #d1d5db;
+    }
+    @media (max-width: 600px) {
+      .container { padding: 15px; }
+      h1 { font-size: 1.25rem; }
+      #joystick { width: 150px; height: 150px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>ESP32 Joystick Motor Control</h1>
+    <div>Status: <span id="status" class="disconnected">Disconnected</span></div>
+    <div id="joystick"></div>
+  </div>
+
+  <script>
+    const statusEl = document.getElementById('status');
+    let isConnected = false;
+    let sendInterval = null;
+
+    // Check server connectivity
+    async function checkConnection() {
+      try {
+        const response = await fetch('http://192.168.4.1/ping');
+        if (response.ok) {
+          statusEl.textContent = 'Connected';
+          statusEl.className = 'connected';
+          isConnected = true;
+        } else {
+          statusEl.textContent = 'Disconnected';
+          statusEl.className = 'disconnected';
+          isConnected = false;
+        }
+      } catch (error) {
+        statusEl.textContent = 'Disconnected';
+        statusEl.className = 'disconnected';
+        isConnected = false;
+      }
+    }
+
+    // Initialize joystick
+    const joystick = nipplejs.create({
+      zone: document.getElementById('joystick'),
+      mode: 'static',
+      position: { left: '50%', top: '50%' },
+      color: 'blue',
+      size: 100
+    });
+
+    // Send joystick data via POST
+    async function sendJoystickData(x, y) {
+      if (!isConnected) return;
+      try {
+        await fetch('http://192.168.4.1/control', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ x: parseFloat(x), y: parseFloat(y) })
+        });
+      } catch (error) {
+        console.error('Error sending data:', error);
+      }
+    }
+
+    // Joystick move event
+    joystick.on('move', (evt, data) => {
+      const x = (data.vector.x || 0).toFixed(2);
+      const y = (data.vector.y || 0).toFixed(2);
+      if (!sendInterval) {
+        sendInterval = setInterval(() => sendJoystickData(x, y), 100); // Send every 100ms
+      }
+    });
+
+    // Joystick release event
+    joystick.on('end', () => {
+      if (sendInterval) {
+        clearInterval(sendInterval);
+        sendInterval = null;
+      }
+      sendJoystickData(0, 0); // Stop motors
+    });
+
+    // Periodically check connection
+    setInterval(checkConnection, 2000);
+    checkConnection();
+  </script>
+</body>
+</html>

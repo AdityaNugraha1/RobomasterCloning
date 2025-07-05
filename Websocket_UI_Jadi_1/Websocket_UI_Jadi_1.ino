@@ -2,6 +2,17 @@
 #include <WebServer.h>
 #include <WebSocketsServer.h>
 
+// Define pins for Motor A
+const int motorA_IN1 = 22; // Connect to DRV8833 IN1
+const int motorA_IN2 = 23; // Connect to DRV8833 IN2
+
+// Define pins for Motor B
+const int motorB_IN3 = 25; // Connect to DRV8833 IN3
+const int motorB_IN4 = 26; // Connect to DRV8833 IN4
+
+// nSLEEP pin for DRV8833
+const int nSLEEP_PIN = 27; // Connect to DRV8833 nSLEEP
+
 const char* ssid = "ESP32_WebController";
 const char* password = "password123";
 
@@ -19,21 +30,43 @@ void webSocketEvent(uint8_t num, WStype_t type, uint8_t * payload, size_t length
     case WStype_DISCONNECTED:
       connectedClients--;
       Serial.printf("[WS] Client %d disconnected from IP: %s | Clients connected: %d | Latency: %.3f ms\n", 
-        num, webSocket.remoteIP(num).toString().c_str(), connectedClients, (float)(micros() - startTime) / 1000.0);
+        num, webSocket.remoteIP(num).toString().c_str(), connectedClients, (float)(micros() - startTime) / 1000.0, Serial.print("Initial Free Heap: "), Serial.print(ESP.getFreeHeap()), Serial.println(" bytes"));
       wsConnected = (connectedClients > 0);
       break;
       
     case WStype_CONNECTED:
       connectedClients++;
       Serial.printf("[WS] Client %d connected from IP: %s | Clients connected: %d | Latency: %.3f ms\n", 
-        num, webSocket.remoteIP(num).toString().c_str(), connectedClients, (float)(micros() - startTime) / 1000.0);
+        num, webSocket.remoteIP(num).toString().c_str(), connectedClients, (float)(micros() - startTime) / 1000.0, Serial.print("Initial Free Heap: "), Serial.print(ESP.getFreeHeap()), Serial.println(" bytes"));
       wsConnected = true;
-      webSocket.sendTXT(num, "[ESP] Connected! Send messages via Web");
+      webSocket.sendTXT(num, "[ESP] Connected! Use buttons to control motors");
       break;
       
     case WStype_TEXT:
+      String message = (char*)payload;
       Serial.printf("[Web] Message from client %d (IP: %s): %s | Latency: %.3f ms\n", 
-        num, webSocket.remoteIP(num).toString().c_str(), (char*)payload, (float)(micros() - startTime) / 1000.0);
+        num, webSocket.remoteIP(num).toString().c_str(), message.c_str(), (float)(micros() - startTime) / 1000.0);
+        
+      // Process motor control commands
+      if (message == "motorA_forward") {
+        moveMotorA_Forward();
+        webSocket.broadcastTXT("[Motor A] Moving Forward");
+      } else if (message == "motorA_backward") {
+        moveMotorA_Backward();
+        webSocket.broadcastTXT("[Motor A] Moving Backward");
+      } else if (message == "motorA_stop") {
+        stopMotorA();
+        webSocket.broadcastTXT("[Motor A] Stopped");
+      } else if (message == "motorB_forward") {
+        moveMotorB_Forward();
+        webSocket.broadcastTXT("[Motor B] Moving Forward");
+      } else if (message == "motorB_backward") {
+        moveMotorB_Backward();
+        webSocket.broadcastTXT("[Motor B] Moving Backward");
+      } else if (message == "motorB_stop") {
+        stopMotorB();
+        webSocket.broadcastTXT("[Motor B] Stopped");
+      }
       break;
   }
 }
@@ -44,7 +77,7 @@ void handleRoot() {
 <html>
 <head>
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>ESP32 WebSerial Gateway</title>
+  <title>ESP32 Motor Control Remote</title>
   <style>
     body {
       font-family: Arial, sans-serif;
@@ -73,11 +106,12 @@ void handleRoot() {
     .status {
       font-weight: bold;
       margin-bottom: 1rem;
+      text-align: center;
     }
     .connected { color: #16a34a; }
     .disconnected { color: #dc2626; }
     #messages {
-      height: 300px;
+      height: 200px;
       overflow-y: auto;
       background: #f9fafb;
       border: 1px solid #e5e7eb;
@@ -92,38 +126,46 @@ void handleRoot() {
       border-radius: 5px;
       animation: fadeIn 0.3s ease-in;
     }
-    .serial { background: #ecfdf5; color: #16a34a; }
-    .user { background: #eff6ff; color: #2563eb; }
     .system { color: #6b7280; }
-    .input-group {
+    .motor { background: #ecfdf5; color: #16a34a; }
+    .control-group {
       display: flex;
+      flex-direction: column;
       gap: 10px;
-      flex-wrap: wrap;
+      margin-bottom: 1rem;
     }
-    #input {
+    .motor-controls {
+      display: flex;
+      justify-content: space-between;
+      gap: 20px;
+    }
+    .motor-box {
       flex: 1;
       padding: 10px;
       border: 1px solid #d1d5db;
-      border-radius: 5px;
-      font-size: 1rem;
-      outline: none;
+      border-radius: 8px;
+      text-align: center;
     }
-    #input:focus {
-      border-color: #2563eb;
-      box-shadow: 0 0 0 2px rgba(37,99,235,0.2);
+    .motor-box h2 {
+      font-size: 1.2rem;
+      margin-bottom: 10px;
     }
     button {
-      padding: 10px 20px;
+      padding: 10px;
       border: none;
       border-radius: 5px;
       font-size: 1rem;
       cursor: pointer;
       transition: background 0.2s;
+      width: 100%;
+      margin: 5px 0;
     }
-    .send-btn { background: #2563eb; color: #fff; }
-    .send-btn:hover { background: #1d4ed8; }
-    .clear-btn { background: #dc2626; color: #fff; }
-    .clear-btn:hover { background: #b91c1c; }
+    .forward-btn { background: #2563eb; color: #fff; }
+    .forward-btn:hover { background: #1d4ed8; }
+    .backward-btn { background: #f59e0b; color: #fff; }
+    .backward-btn:hover { background: #d97706; }
+    .stop-btn { background: #dc2626; color: #fff; }
+    .stop-btn:hover { background: #b91c1c; }
     @keyframes fadeIn {
       from { opacity: 0; transform: translateY(10px); }
       to { opacity: 1; transform: translateY(0); }
@@ -131,19 +173,31 @@ void handleRoot() {
     @media (max-width: 600px) {
       .container { padding: 15px; }
       h1 { font-size: 1.25rem; }
-      #input, button { font-size: 0.9rem; }
+      .motor-controls { flex-direction: column; }
+      button { font-size: 0.9rem; }
     }
   </style>
 </head>
 <body>
   <div class="container">
-    <h1>ESP32 WebSerial Gateway</h1>
+    <h1>ESP32 Motor Control Remote</h1>
     <div>Status: <span id="status" class="disconnected">Disconnected</span></div>
     <div id="messages"></div>
-    <div class="input-group">
-      <input id="input" type="text" placeholder="Type message...">
-      <button class="send-btn" onclick="sendMessage()">Send</button>
-      <button class="clear-btn" onclick="clearMessages()">Clear</button>
+    <div class="control-group">
+      <div class="motor-controls">
+        <div class="motor-box">
+          <h2>Motor A</h2>
+          <button class="forward-btn" onclick="sendCommand('motorA_forward')">Forward</button>
+          <button class="backward-btn" onclick="sendCommand('motorA_backward')">Backward</button>
+          <button class="stop-btn" onclick="sendCommand('motorA_stop')">Stop</button>
+        </div>
+        <div class="motor-box">
+          <h2>Motor B</h2>
+          <button class="forward-btn" onclick="sendCommand('motorB_forward')">Forward</button>
+          <button class="backward-btn" onclick="sendCommand('motorB_backward')">Backward</button>
+          <button class="stop-btn" onclick="sendCommand('motorB_stop')">Stop</button>
+        </div>
+      </div>
     </div>
   </div>
 
@@ -151,7 +205,6 @@ void handleRoot() {
     const socket = new WebSocket('ws://' + window.location.hostname + ':81/');
     const statusEl = document.getElementById('status');
     const messagesEl = document.getElementById('messages');
-    const inputEl = document.getElementById('input');
     
     socket.onopen = () => {
       statusEl.textContent = 'Connected';
@@ -160,9 +213,7 @@ void handleRoot() {
     };
     
     socket.onmessage = (e) => {
-      if(e.data.startsWith('[Serial]')) {
-        addMessage(e.data, 'serial');
-      }
+      addMessage(e.data, 'motor');
     };
     
     socket.onclose = () => {
@@ -171,17 +222,10 @@ void handleRoot() {
       addMessage('[System] Connection lost. Refresh page to reconnect.', 'system');
     };
     
-    function sendMessage() {
-      const msg = inputEl.value.trim();
-      if(msg && socket.readyState === WebSocket.OPEN) {
-        socket.send(msg);
-        addMessage('[You] ' + msg, 'user');
-        inputEl.value = '';
+    function sendCommand(command) {
+      if(socket.readyState === WebSocket.OPEN) {
+        socket.send(command);
       }
-    }
-    
-    function clearMessages() {
-      messagesEl.innerHTML = '';
     }
     
     function addMessage(msg, type) {
@@ -191,10 +235,6 @@ void handleRoot() {
       messagesEl.appendChild(div);
       messagesEl.scrollTo({ top: messagesEl.scrollHeight, behavior: 'smooth' });
     }
-    
-    inputEl.addEventListener('keypress', (e) => {
-      if(e.key === 'Enter') sendMessage();
-    });
   </script>
 </body>
 </html>
@@ -204,7 +244,16 @@ void handleRoot() {
 
 void setup() {
   Serial.begin(115200);
-  
+  Serial.println("ESP32 Motor Control with WebSocket");
+
+  // Set motor control pins as outputs
+  pinMode(motorA_IN1, OUTPUT);
+  pinMode(motorA_IN2, OUTPUT);
+  pinMode(motorB_IN3, OUTPUT);
+  pinMode(motorB_IN4, OUTPUT);
+  pinMode(nSLEEP_PIN, OUTPUT);
+  digitalWrite(nSLEEP_PIN, HIGH); // Enable the driver
+
   // Setup WiFi Access Point
   WiFi.softAP(ssid, password);
   Serial.println("AP IP: " + WiFi.softAPIP().toString());
@@ -217,14 +266,14 @@ void setup() {
   webSocket.begin();
   webSocket.onEvent(webSocketEvent);
   
-  Serial.println("Ready! Send messages via web interface or Serial Monitor");
+  Serial.println("Ready! Control motors via web interface");
 }
 
 void loop() {
   webSocket.loop();
   server.handleClient();
   
-  // Read from Serial and send to Web with logging
+  // Read from Serial and send to Web
   unsigned long startTime = micros();
   while(Serial.available()) {
     char c = Serial.read();
@@ -240,4 +289,54 @@ void loop() {
       serialBuffer += c;
     }
   }
+}
+
+// --- Motor A Control Functions ---
+void moveMotorA_Forward() {
+  digitalWrite(motorA_IN1, HIGH);
+  digitalWrite(motorA_IN2, LOW);
+  Serial.print("Initial Free Heap: ");
+  Serial.print(ESP.getFreeHeap());
+  Serial.println(" bytes");
+}
+
+void moveMotorA_Backward() {
+  digitalWrite(motorA_IN1, LOW);
+  digitalWrite(motorA_IN2, HIGH);
+  Serial.print("Initial Free Heap: ");
+  Serial.print(ESP.getFreeHeap());
+  Serial.println(" bytes");
+}
+
+void stopMotorA() {
+  digitalWrite(motorA_IN1, LOW);
+  digitalWrite(motorA_IN2, LOW);
+  Serial.print("Initial Free Heap: ");
+  Serial.print(ESP.getFreeHeap());
+  Serial.println(" bytes");
+}
+
+// --- Motor B Control Functions ---
+void moveMotorB_Forward() {
+  digitalWrite(motorB_IN3, HIGH);
+  digitalWrite(motorB_IN4, LOW);
+  Serial.print("Initial Free Heap: ");
+  Serial.print(ESP.getFreeHeap());
+  Serial.println(" bytes");
+}
+
+void moveMotorB_Backward() {
+  digitalWrite(motorB_IN3, LOW);
+  digitalWrite(motorB_IN4, HIGH);
+  Serial.print("Initial Free Heap: ");
+  Serial.print(ESP.getFreeHeap());
+  Serial.println(" bytes");
+}
+
+void stopMotorB() {
+  digitalWrite(motorB_IN3, LOW);
+  digitalWrite(motorB_IN4, LOW);
+  Serial.print("Initial Free Heap: ");
+  Serial.print(ESP.getFreeHeap());
+  Serial.println(" bytes");
 }

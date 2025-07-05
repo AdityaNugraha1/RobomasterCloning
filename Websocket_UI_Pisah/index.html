@@ -1,201 +1,158 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>ESP32 WebSerial Gateway</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <title>ESP32 Joystick Control</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/nipplejs/0.10.0/nipplejs.min.js"></script>
   <style>
     body {
-      font-family: Arial, sans-serif;
-      background: linear-gradient(to bottom, #e0e7ff, #f3f4f6);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      background-color: #f0f2f5;
       margin: 0;
       padding: 20px;
       display: flex;
+      flex-direction: column;
       justify-content: center;
       align-items: center;
       min-height: 100vh;
+      box-sizing: border-box;
+      /* Prevent pull-to-refresh and other touch gestures on the page body */
+      touch-action: none;
     }
     .container {
       width: 100%;
-      max-width: 600px;
+      max-width: 420px;
       background: #fff;
-      border-radius: 10px;
-      box-shadow: 0 4px 12px rgba(0,0,0,0.1);
-      padding: 20px;
-    }
-    h1 {
-      font-size: 1.5rem;
-      color: #1f2937;
-      margin-bottom: 1rem;
+      border-radius: 12px;
+      box-shadow: 0 6px 20px rgba(0,0,0,0.08);
+      padding: 25px;
       text-align: center;
     }
+    h1 {
+      font-size: 1.6rem;
+      color: #1c1e21;
+      margin-top: 0;
+      margin-bottom: 1rem;
+    }
+    .status-container {
+      margin-bottom: 1.5rem;
+      font-size: 1.1rem;
+      color: #606770;
+    }
     .status {
-      font-weight: bold;
-      margin-bottom: 1rem;
-      display: flex;
-      align-items: center;
-      gap: 10px;
+      font-weight: 600;
+      padding: 4px 8px;
+      border-radius: 6px;
     }
-    .connected { color: #16a34a; }
-    .disconnected { color: #dc2626; }
-    #messages {
-      height: 300px;
-      overflow-y: auto;
-      background: #f9fafb;
-      border: 1px solid #e5e7eb;
-      border-radius: 8px;
-      padding: 10px;
-      margin-bottom: 1rem;
-      scroll-behavior: smooth;
+    .connected { 
+      color: #31a24c;
+      background-color: #e3f3e7;
     }
-    .message {
-      margin-bottom: 0.5rem;
-      padding: 8px;
-      border-radius: 5px;
-      animation: fadeIn 0.3s ease-in;
+    .disconnected { 
+      color: #fa383e;
+      background-color: #fdeced;
     }
-    .serial { background: #ecfdf5; color: #16a34a; }
-    .user { background: #eff6ff; color: #2563eb; }
-    .system { color: #6b7280; }
-    .input-group {
-      display: flex;
-      gap: 10px;
-      flex-wrap: wrap;
-    }
-    #input {
-      flex: 1;
-      padding: 10px;
-      border: 1px solid #d1d5db;
-      border-radius: 5px;
-      font-size: 1rem;
-      outline: none;
-    }
-    #input:focus {
-      border-color: #2563eb;
-      box-shadow: 0 0 0 2px rgba(37,99,235,0.2);
-    }
-    button {
-      padding: 10px 20px;
-      border: none;
-      border-radius: 5px;
-      font-size: 1rem;
-      cursor: pointer;
-      transition: background 0.2s;
-    }
-    .send-btn { background: #2563eb; color: #fff; }
-    .send-btn:hover { background: #1d4ed8; }
-    .clear-btn { background: #dc2626; color: #fff; }
-    .clear-btn:hover { background: #b91c1c; }
-    .reconnect-btn { background: #2563eb; color: #fff; display: none; }
-    .reconnect-btn:hover { background: #1d4ed8; }
-    @keyframes fadeIn {
-      from { opacity: 0; transform: translateY(10px); }
-      to { opacity: 1; transform: translateY(0); }
+    #joystick-zone {
+      width: 200px;
+      height: 200px;
+      margin: 0 auto;
+      background: #e4e6eb;
+      border-radius: 50%;
+      position: relative;
+      border: 3px solid #d1d5db;
     }
     @media (max-width: 600px) {
-      .container { padding: 15px; }
-      h1 { font-size: 1.25rem; }
-      #input, button { font-size: 0.9rem; }
+      .container { padding: 20px; }
+      h1 { font-size: 1.4rem; }
+      #joystick-zone { width: 180px; height: 180px; }
     }
   </style>
 </head>
 <body>
   <div class="container">
-    <h1>ESP32 WebSerial Gateway</h1>
-    <div class="status">
-      Status: <span id="status" class="disconnected">Disconnected</span>
-      <button id="reconnectBtn" class="reconnect-btn" onclick="reconnect()">Reconnect</button>
+    <h1>ESP32 Motor Control</h1>
+    <div class="status-container">
+      Status: <span id="status" class="status disconnected">Disconnected</span>
     </div>
-    <div id="messages"></div>
-    <div class="input-group">
-      <input id="input" type="text" placeholder="Type message...">
-      <button class="send-btn" onclick="sendMessage()">Send</button>
-      <button class="clear-btn" onclick="clearMessages()">Clear</button>
-    </div>
+    <div id="joystick-zone"></div>
   </div>
 
   <script>
-    let socket = new WebSocket('ws://192.168.4.1:81/');
     const statusEl = document.getElementById('status');
-    const messagesEl = document.getElementById('messages');
-    const inputEl = document.getElementById('input');
-    const reconnectBtn = document.getElementById('reconnectBtn');
+    // --- CORRECTED: Hardcode the ESP32's Access Point IP address ---
+    const gateway = 'ws://192.168.4.1:81/'; 
+    let socket;
 
-    socket.onopen = () => {
-      statusEl.textContent = 'Connected';
-      statusEl.className = 'connected';
-      reconnectBtn.style.display = 'none';
-      addMessage('[System] WebSocket connected', 'system');
-    };
-    
-    socket.onmessage = (e) => {
-      if(e.data.startsWith('[Serial]')) {
-        addMessage(e.data, 'serial');
-      }
-    };
-    
-    socket.onclose = () => {
-      statusEl.textContent = 'Disconnected';
-      statusEl.className = 'disconnected';
-      reconnectBtn.style.display = 'inline-block';
-      addMessage('[System] Connection lost. Use Reconnect button to try again.', 'system');
-    };
-    
-    socket.onerror = (e) => {
-      addMessage('[System] Error: WebSocket connection failed.', 'system');
-    };
-    
-    function sendMessage() {
-      const msg = inputEl.value.trim();
-      if(msg && socket.readyState === WebSocket.OPEN) {
-        socket.send(msg);
-        addMessage('[You] ' + msg, 'user');
-        inputEl.value = '';
-      }
-    }
-    
-    function clearMessages() {
-      messagesEl.innerHTML = '';
-    }
-    
-    function reconnect() {
-      if(socket) {
-        socket.close();
-      }
-      socket = new WebSocket('ws://192.168.4.1:81/');
+    // --- OPTIMIZATION: Throttling variables ---
+    const SEND_INTERVAL = 50; // Send data every 50ms (20 times per second)
+    let lastJoystickData = { x: 0, y: 0 };
+    let intervalId;
+
+    function connectWebSocket() {
+      console.log("Attempting to connect to WebSocket...");
+      socket = new WebSocket(gateway);
+
       socket.onopen = () => {
+        console.log('WebSocket connection established.');
         statusEl.textContent = 'Connected';
-        statusEl.className = 'connected';
-        reconnectBtn.style.display = 'none';
-        addMessage('[System] WebSocket connected', 'system');
+        statusEl.className = 'status connected';
+        // Start sending data at a regular interval
+        intervalId = setInterval(sendJoystickData, SEND_INTERVAL);
       };
-      socket.onmessage = (e) => {
-        if(e.data.startsWith('[Serial]')) {
-          addMessage(e.data, 'serial');
-        }
-      };
-      socket.onclose = () => {
+      
+      socket.onclose = (event) => {
+        console.log('WebSocket connection closed.', event);
         statusEl.textContent = 'Disconnected';
-        statusEl.className = 'disconnected';
-        reconnectBtn.style.display = 'inline-block';
-        addMessage('[System] Connection lost. Use Reconnect button to try again.', 'system');
+        statusEl.className = 'status disconnected';
+        // Stop sending data
+        if (intervalId) {
+          clearInterval(intervalId);
+        }
+        // Attempt to reconnect after a delay
+        setTimeout(connectWebSocket, 2000);
       };
-      socket.onerror = (e) => {
-        addMessage('[System] Error: WebSocket connection failed.', 'system');
+
+      socket.onerror = (error) => {
+        console.error('WebSocket error:', error);
+        socket.close(); // This will trigger the onclose event for reconnection logic
       };
-      addMessage('[System] Attempting to reconnect...', 'system');
     }
-    
-    function addMessage(msg, type) {
-      const div = document.createElement('div');
-      div.className = `message ${type}`;
-      div.textContent = msg;
-      messagesEl.appendChild(div);
-      messagesEl.scrollTo({ top: messagesEl.scrollHeight, behavior: 'smooth' });
+
+    // Function to send data, called by setInterval
+    function sendJoystickData() {
+        if (socket && socket.readyState === WebSocket.OPEN) {
+            socket.send(JSON.stringify(lastJoystickData));
+        }
     }
-    
-    inputEl.addEventListener('keypress', (e) => {
-      if(e.key === 'Enter') sendMessage();
+
+    const joystick = nipplejs.create({
+      zone: document.getElementById('joystick-zone'),
+      mode: 'static',
+      position: { left: '50%', top: '50%' },
+      color: '#0062E0',
+      size: 120,
+      threshold: 0.1, // Minimum distance to trigger a move
+      fadeTime: 250
     });
+    
+    // Listen for joystick movement
+    joystick.on('move', (evt, data) => {
+      // Instead of sending immediately, just update the latest data object.
+      lastJoystickData = {
+          x: (data.vector.x || 0),
+          y: (data.vector.y || 0)
+      };
+    });
+    
+    // When the joystick is released, reset the data to stop the motors
+    joystick.on('end', () => {
+      lastJoystickData = { x: 0, y: 0 };
+      // Send the stop command immediately instead of waiting for the next interval
+      sendJoystickData(); 
+    });
+
+    // Initial connection attempt
+    window.addEventListener('load', connectWebSocket);
   </script>
 </body>
 </html>
